@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, shrink-to-fit=no"
+    />
+    <meta http-equiv="X-UA-Compatible" content="ie=edge" />
+
+    <!-- Load required Bootstrap and BootstrapVue CSS -->
+    <link
+      type="text/css"
+      rel="stylesheet"
+      href="//unpkg.com/bootstrap/dist/css/bootstrap.min.css"
+    />
+    <link
+      type="text/css"
+      rel="stylesheet"
+      href="//unpkg.com/bootstrap-vue@latest/dist/bootstrap-vue.min.css"
+    />
+    <script src="https://unpkg.com/axios/dist/axios.min.js"></script>
+
+    <!-- Load Vue followed by BootstrapVue -->
+    <script src="https://cdn.jsdelivr.net/npm/vue@2.6.11"></script>
+    <script src="https://unpkg.com/bootstrap-vue@latest/dist/bootstrap-vue.min.js"></script>
+    <title>A Go Server Info Application With CockRoachDB</title>
+  </head>
+  <body>
+    <div id="app" class=" mt-2">
+      <b-container fluid>
+        <b-form @submit="onSubmit" @reset="onReset" v-if="show">
+          <b-form-group
+            id="input-group-1"
+            label="Domain to search:"
+            label-for="input-1"
+          >
+            <b-form-input
+              id="input-1"
+              ref="input-1"
+              v-model="form.domain"
+              placeholder="something.io"
+              required
+            ></b-form-input>
+          </b-form-group>
+          <div class="clearfix">
+            <div class="float-left">
+              <b-button
+                :class="visible ? null : 'collapsed'"
+                :aria-expanded="visible ? 'true' : 'false'"
+                aria-controls="collapse-4"
+                type="Search"
+                variant="primary"
+                >Search</b-button
+              >
+              <b-button type="reset" variant="danger">Reset</b-button>
+            </div>
+            <div class="float-right">
+              <b-button id="show-btn" v-b-modal.modal-center @click="showModal"
+                >Show History</b-button
+              >
+            </div>
+          </div>
+          <b-alert
+            v-model="alertShow"
+            v-if="this.alerts.length !=0"
+            class="alert alert-danger mt-3"
+            role="alert"
+            dismissible
+            @dismissed="dismissed"
+          >
+            {{ alerts}}!
+          </b-alert>
+        </b-form>
+        <div class="d-flex justify-content-center text-center mb-3 mt-5">
+          <b-spinner
+            v-if="loadingDomain"
+            variant=" primary"
+            label="Loading..."
+          ></b-spinner>
+        </div>
+        <b-collapse
+          id="collapse-4"
+          v-if="this.alerts.length == 0 && !loadingDomain"
+          v-model="visible"
+          class="mt-2"
+        >
+          <b-card class="mt-3" header="Domain Results:">
+            <div>
+              <b-form-group
+                id="fieldset-serverChanged"
+                label-cols-sm="4"
+                label-cols-lg="3"
+                placeholder="no provided"
+                label="Server Changed?"
+                label-for="input-serverChanged"
+              >
+                <b-form-input
+                  readonly
+                  id="input-serverChanged"
+                  v-model="mainInfo.serverChanged ? 'Yes' : 'No' "
+                ></b-form-input>
+                <b-form-text id="input-live-help" class="text-right"
+                  >*1 hour before.</b-form-text
+                >
+              </b-form-group>
+
+              <b-form-group
+                id="fieldset-sslGrade"
+                label-cols-sm="4"
+                label-cols-lg="3"
+                placeholder="no provided"
+                label="SSL Grade"
+                label-for="input-sslGrade"
+              >
+                <b-form-input
+                  readonly
+                  id="input-sslGrade"
+                  v-model="mainInfo.sslGrade"
+                ></b-form-input>
+              </b-form-group>
+
+              <b-form-group
+                id="fieldset-preSslGrade"
+                label-cols-sm="4"
+                label-cols-lg="3"
+                placeholder="no provided"
+                label="Previous SSL Grade"
+                label-for="input-preSslGrade"
+              >
+                <b-form-input
+                  readonly
+                  id="input-preSslGrade"
+                  v-model="mainInfo.preSslGrade"
+                ></b-form-input>
+                <b-form-text id="input-live-help" class="text-right"
+                  >*1 hour before.</b-form-text
+                >
+              </b-form-group>
+
+              <b-form-group
+                id="fieldset-logoURL"
+                label-cols-sm="4"
+                label-cols-lg="3"
+                placeholder="no provided"
+                label="Logo URL"
+                label-for="input-logoURL"
+              >
+                <b-form-input
+                  readonly
+                  id="input-logoURL"
+                  v-model="mainInfo.logoURL"
+                ></b-form-input>
+              </b-form-group>
+
+              <b-form-group
+                id="fieldset-title"
+                label-cols-sm="4"
+                label-cols-lg="3"
+                placeholder="no provided"
+                label="Title"
+                label-for="input-title"
+              >
+                <b-form-input
+                  readonly
+                  id="input-title"
+                  v-model="mainInfo.title"
+                ></b-form-input>
+              </b-form-group>
+
+              <b-form-group
+                id="fieldset-isDown"
+                label-cols-sm="4"
+                label-cols-lg="3"
+                placeholder="no provided"
+                label="Is server Down?"
+                label-for="input-isDown"
+              >
+                <b-form-input
+                  readonly
+                  id="input-isDown"
+                  v-model="mainInfo.isDown ? 'Yes' : 'No' "
+                ></b-form-input>
+              </b-form-group>
+
+              <b-form-group
+                v-if="this.serversInfo.length!=0"
+                label="Servers"
+                label-size="lg"
+                label-class="font-weight-bold pt-0 mb-4"
+              >
+                <div v-for="(server,index) in serversInfo">
+                  <b-form-group
+                    label-cols-lg="2"
+                    :label="setServerName(index)"
+                    label-class="font-weight-bold pt-0 ml-5"
+                  >
+                    <div v-for="(value, field) in server">
+                      <b-form-group
+                        label-cols-sm="4"
+                        :label="serversField[field]"
+                        label-align-sm="right"
+                        :label-for="'field'-'index'"
+                        readonly
+                      >
+                        <b-form-input
+                          :id="'field'-'index'"
+                          v-model="value"
+                        ></b-form-input>
+                      </b-form-group>
+                    </div>
+                  </b-form-group>
+                </div>
+              </b-form-group>
+            </div>
+          </b-card>
+        </b-collapse>
+
+        <b-modal
+          centered
+          scrollable
+          ref="my-modal"
+          ok-only
+          ok-variant="danger"
+          ok-title="Close"
+          title="This is your history search:"
+          @hidden="hideModal"
+        >
+          <div
+            v-if="this.domainsList.length == 0 && alerts=='' "
+            class="d-flex justify-content-center mb-3"
+          >
+            <b-spinner v-if="loading" label="Loading..."></b-spinner>
+            <p v-else>No records</p>
+          </div>
+          <ol class="list-group">
+            <li class="list-group-item" v-for="domainItem in domainsList">
+              {{domainItem}}
+            </li>
+          </ol>
+        </b-modal>
+      </b-container>
+    </div>
+  </body>
+</html>
+<script>
+  var app = new Vue({
+    el: "#app",
+    data: {
+      alertShow: true,
+      alerts: "",
+      domainsList: [],
+      serversInfo: [],
+      serversField: {
+        address: "Address",
+        ssl_grade: "SSL Grade",
+        country: "Country",
+        owner: "Owner"
+      },
+      form: {
+        domain: ""
+      },
+      mainInfo: {
+        serverChanged: "",
+        sslGrade: "",
+        preSslGrade: "",
+        logoURL: "",
+        title: "",
+        isDown: false
+      },
+      visible: false,
+      loading: false,
+      loadingDomain: false,
+      show: true
+    },
+    methods: {
+      onSubmit(evt) {
+        evt.preventDefault();
+        alertShow = false;
+        this.dismissed();
+        this.visible = false;
+        this.loadingDomain = true;
+        this.servers = "";
+        axios
+          .post("http://0.0.0.0:8005/newSearch", { domain: this.form.domain })
+          .then(
+            response => (
+              console.log("respuesta del post ", response.data.servers),
+              ((this.mainInfo.serverChanged = response.data.server_changed),
+              (this.mainInfo.sslGrade = response.data.ssl_grade),
+              (this.mainInfo.preSslGrade = response.data.previous_ssl_grade),
+              (this.mainInfo.logoURL = response.data.logo),
+              (this.mainInfo.title = response.data.title),
+              (this.mainInfo.isDown = response.data.is_down),
+              (this.serversInfo = response.data.servers),
+              (this.servers = response.data))
+            )
+          )
+          .catch(e => (this.alerts = e.response.data.message))
+          .then(() => ((this.loadingDomain = false), (this.visible = true)));
+
+        // alert(JSON.stringify(this.form));
+      },
+      onReset(evt) {
+        evt.preventDefault();
+        this.visible = false;
+        // Reset values
+        this.dismissed();
+        this.mainInfo = {
+          serverChanged: "",
+          sslGrade: "",
+          preSslGrade: "",
+          logoURL: "",
+          title: "",
+          isDown: false
+        };
+        this.form.domain = "";
+        this.domainsList = [];
+        this.servers = "";
+        this.loadingDomain = false;
+        // Trick to reset/clear native browser form validation state
+        this.show = false;
+        this.$nextTick(() => {
+          this.show = true;
+        });
+      },
+      showModal() {
+        this.loading = true;
+        axios
+          .get(
+            "http://0.0.0.0:8005/log",
+            { crossdomain: true },
+            {
+              headers: {
+                "Content-Type": "application/json"
+              }
+            }
+          )
+          .then(response => (this.domainsList = response.data.items))
+          .then((this.loading = false))
+          .then(() => this.$refs["my-modal"].show());
+      },
+      hideModal(e) {
+        this.domainsList = [];
+      },
+      dismissed() {
+        this.alerts = "";
+      },
+      setServerName(index) {
+        return `Server ${index + 1}`;
+      }
+    }
+  });
+</script>
