@@ -40,6 +40,8 @@ func AllSearches(w http.ResponseWriter, r *http.Request) {
 	stringListDomains := []string{}
 
 	rows, err := db.Query("SELECT domain FROM domains order by ID desc;")
+	//to include pag for a better way to extract data
+
 	helpers.Catch(err)
 
 	defer rows.Close()
@@ -69,39 +71,36 @@ func NewSearch(w http.ResponseWriter, r *http.Request) {
 
 	if err != nil {
 		helpers.RespondwithError(w, http.StatusNotFound, "Domain key not found")
-		helpers.Catch(err)
+		return
 
+	}
+	if data.Domain == "" {
+		helpers.RespondwithError(w, http.StatusNotFound, "Domain key is empty string")
+		return
+	}
+
+	query, err := db.Prepare("INSERT INTO domains (domain) VALUES ($1)")
+	helpers.Catch(err)
+	_, er := query.Exec(data.Domain)
+	helpers.Catch(er)
+	defer query.Close()
+	println("Domain Saved")
+
+	u, infoErr := url.Parse(data.Domain)
+	u.Scheme = "http"
+	payload := models.Information{}
+
+	payload.Title, payload.Logo, payload.IsDown, infoErr = helpers.ElementInfo(u.String())
+	if infoErr != nil {
+		helpers.RespondwithError(w, http.StatusNotFound, fmt.Sprintf("%v", infoErr))
+		return
+	}
+	payload.Servers, payload.SslGrade, payload.PreviousSslGrade, payload.ServersChanged, err = helpers.SslInfo(u.Path)
+	if err == nil {
+		helpers.RespondwithJSON(w, http.StatusOK, payload)
 	} else {
-		if data.Domain != "" {
-			query, err := db.Prepare("INSERT INTO domains (domain) VALUES ($1)")
-			helpers.Catch(err)
-			_, er := query.Exec(data.Domain)
-			helpers.Catch(er)
-			defer query.Close()
-			println("Domain Saved")
-		} else {
-			helpers.RespondwithError(w, http.StatusNotFound, "Domain key is empty string")
-			return
-		}
 
-		u, _ := url.Parse(data.Domain)
-		u.Scheme = "http"
-		payload := models.Information{}
-		var infoErr error
-
-		payload.Title, payload.Logo, payload.IsDown, infoErr = helpers.ElementInfo(u.String())
-		if infoErr != nil {
-			helpers.RespondwithError(w, http.StatusNotFound, fmt.Sprintf("%v", infoErr))
-			return
-		}
-		payload.Servers, payload.SslGrade, payload.PreviousSslGrade, payload.ServersChanged, err = helpers.SslInfo(u.Path)
-		if err == nil {
-			helpers.RespondwithJSON(w, http.StatusOK, payload)
-		} else {
-
-			helpers.RespondwithError(w, http.StatusNotFound, "Error on Request")
-		}
-
+		helpers.RespondwithError(w, http.StatusNotFound, "Error on Request")
 	}
 
 }
